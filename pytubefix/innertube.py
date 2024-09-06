@@ -502,7 +502,7 @@ class InnerTube:
                 if data['access_token']:
                     self.access_token = data['access_token']
                     self.refresh_token = data['refresh_token']
-                    self.expires = data['expires']
+                    self.expires = data.get('expires') or data.get('expires_in')
                     self.refresh_bearer_token()
 
         if self.use_po_token and self.allow_cache and os.path.exists(self.token_file):
