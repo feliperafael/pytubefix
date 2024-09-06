@@ -511,6 +511,12 @@ class InnerTube:
                 self.access_visitorData = data['visitorData']
                 self.access_po_token = data['po_token']
 
+    # verifica se o token existe
+    def verify_token(self):
+        if self.use_oauth and self.allow_cache and os.path.exists(self.token_file):
+            return True
+        return False
+        
     def cache_tokens(self):
         """Cache tokens to file if allowed."""
         if not self.allow_cache:
