@@ -12,7 +12,7 @@ import os
 from math import ceil
 
 from datetime import datetime
-from typing import BinaryIO, Dict, Optional, Tuple, Iterator
+from typing import BinaryIO, Dict, Optional, Tuple, Iterator, Callable
 from urllib.error import HTTPError
 from urllib.parse import parse_qs
 from pathlib import Path
@@ -85,10 +85,10 @@ class Stream:
         self.resolution = itag_profile[
             "resolution"
         ]  # resolution (e.g.: "480p")
-        if 'width' in stream:
-            self.width = stream["width"]
-        if 'height' in stream:
-            self.width = stream["height"]
+
+        self._width = stream["width"] if 'width' in stream else None
+        self._height = stream["height"] if 'height' in stream else None
+
         self.is_3d = itag_profile["is_3d"]
         self.is_hdr = itag_profile["is_hdr"]
         self.is_live = itag_profile["is_live"]
@@ -157,6 +157,26 @@ class Stream:
         elif self.includes_audio_track:
             audio = self.codecs[0]
         return video, audio
+
+    @property
+    def width(self) -> int:
+        """Video width. Returns None if it does not have the value.
+
+        :rtype: int
+        :returns:
+            Returns an int of the video width
+        """
+        return self._width
+
+    @property
+    def height(self) -> int:
+        """Video height. Returns None if it does not have the value.
+
+        :rtype: int
+        :returns:
+            Returns an int of the video height
+        """
+        return self._height
 
     @property
     def filesize(self) -> int:
@@ -270,15 +290,18 @@ class Stream:
         return f"{filename}.{self.subtype}"
 
 
-    def download(self,
-                output_path: Optional[str] = None,
-                filename: Optional[str] = None,
-                filename_prefix: Optional[str] = None,
-                skip_existing: bool = True,
-                timeout: Optional[int] = None,
-                max_retries: Optional[int] = 0,
-                mp3: bool = False,
-                remove_problematic_character: str = None) -> str:
+    def download(
+        self,
+        output_path: Optional[str] = None,
+        filename: Optional[str] = None,
+        filename_prefix: Optional[str] = None,
+        skip_existing: bool = True,
+        timeout: Optional[int] = None,
+        max_retries: int = 0,
+        mp3: bool = False,
+        remove_problematic_character: Optional[str] = None,
+        interrupt_checker: Optional[Callable[[], bool]] = None
+    ) -> Optional[str]:
         
         """
         Download the file from the URL provided by `self.url`.
@@ -292,6 +315,7 @@ class Stream:
             max_retries (Optional[int]): Maximum number of retries for the download.
             mp3 (bool): Whether the file to be downloaded is an MP3 audio file.
             remove_problematic_character (str): Characters to be removed from the filename, exemple (problematic_character="?").
+            interrupt_checker (Callable): It will be checked while downloading. When it returns True, download will be stopped without any errors.
 
         Returns:
             str: File path of the downloaded file.
@@ -338,6 +362,9 @@ class Stream:
                     timeout=timeout,
                     max_retries=max_retries
                 ):
+                    if interrupt_checker is not None and interrupt_checker() == True:
+                        logger.debug('interrupt_checker returned True, causing to force stop the downloading')
+                        return
                     # reduce the (bytes) remainder by the length of the chunk.
                     bytes_remaining -= len(chunk)
                     # send to the on_progress callback.
@@ -352,6 +379,9 @@ class Stream:
                     timeout=timeout,
                     max_retries=max_retries
                 ):
+                    if interrupt_checker is not None and interrupt_checker() == True:
+                        logger.debug('interrupt_checker returned True, causing to force stop the downloading')
+                        return
                     # reduce the (bytes) remainder by the length of the chunk.
                     bytes_remaining -= len(chunk)
                     # send to the on_progress callback.

@@ -1,7 +1,7 @@
 """Module for interacting with YouTube search."""
 # Native python imports
 import logging
-from typing import List, Optional, Dict, Callable
+from typing import List, Optional, Dict, Callable, Tuple
 
 # Local imports
 from pytubefix import YouTube, Channel, Playlist
@@ -21,7 +21,7 @@ class Search:
             token_file: Optional[str] = None,
             oauth_verifier: Optional[Callable[[str, str], None]] = None,
             use_po_token: Optional[bool] = False,
-            po_token_verifier: Optional[Callable[[None], tuple[str, str]]] = None,
+            po_token_verifier: Optional[Callable[[None], Tuple[str, str]]] = None,
     ):
         """Initialize Search object.
 
@@ -48,8 +48,8 @@ class Search:
             then passed as a `po_token` query parameter to affected clients.
             If allow_oauth_cache is set to True, the user should only be prompted once.
         :param Callable po_token_verifier:
-            (Optional) Verified used to obtain the visitorData and po_tokenoken.
-            The verifier will return the visitorData and po_tokenoken respectively.
+            (Optional) Verified used to obtain the visitorData and po_token.
+            The verifier will return the visitorData and po_token respectively.
             (if passed, else default verifier will be used)
         """
         self.query = query
@@ -306,8 +306,13 @@ class Search:
                 # Get shorts results
                 if 'reelShelfRenderer' in video_details:
                     for items in video_details['reelShelfRenderer']['items']:
-                        shorts.append(YouTube(f"https://www.youtube.com/watch?v="
-                                              f"{items['reelItemRenderer']['videoId']}",
+                        if 'reelItemRenderer' in items:
+                            video_id = items['reelItemRenderer']['videoId']
+                        else:
+                            video_id = items['shortsLockupViewModel']['onTap']['innertubeCommand'][
+                                'reelWatchEndpoint']['videoId']
+
+                        shorts.append(YouTube(f"https://www.youtube.com/watch?v={video_id}",
                                               use_oauth=self.use_oauth,
                                               allow_oauth_cache=self.allow_oauth_cache,
                                               token_file=self.token_file,

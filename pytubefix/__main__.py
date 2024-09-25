@@ -31,7 +31,7 @@ smaller peripheral modules and functions.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytubefix
 import pytubefix.exceptions as exceptions
@@ -51,7 +51,7 @@ class YouTube:
     def __init__(
             self,
             url: str,
-            client: str = 'ANDROID_TESTSUITE',
+            client: str = 'ANDROID_VR',
             on_progress_callback: Optional[Callable[[Any, bytes, int], None]] = None,
             on_complete_callback: Optional[Callable[[Any, Optional[str]], None]] = None,
             proxies: Optional[Dict[str, str]] = None,
@@ -60,7 +60,7 @@ class YouTube:
             token_file: Optional[str] = None,
             oauth_verifier: Optional[Callable[[str, str], None]] = None,
             use_po_token: Optional[bool] = False,
-            po_token_verifier: Optional[Callable[[None], tuple[str, str]]] = None,
+            po_token_verifier: Optional[Callable[[None], Tuple[str, str]]] = None,
     ):
         """Construct a :class:`YouTube <YouTube>`.
 
@@ -100,8 +100,8 @@ class YouTube:
             then passed as a `po_token` query parameter to affected clients.
             If allow_oauth_cache is set to True, the user should only be prompted once.
         :param Callable po_token_verifier:
-            (Optional) Verified used to obtain the visitorData and po_tokenoken.
-            The verifier will return the visitorData and po_tokenoken respectively.
+            (Optional) Verified used to obtain the visitorData and po_token.
+            The verifier will return the visitorData and po_token respectively.
             (if passed, else default verifier will be used)
         """
         # js fetched by js_url
@@ -112,6 +112,7 @@ class YouTube:
 
         # content fetched from innertube/player
         self._vid_info: Optional[Dict] = None
+        self._vid_details: Optional[Dict] = None
 
         # the html of /watch?v=<video_id>
         self._watch_html: Optional[str] = None
@@ -310,6 +311,10 @@ class YouTube:
         """
         status, messages = extract.playability_status(self.vid_info)
 
+        if InnerTube(self.client).require_po_token and not self.po_token:
+            logger.warning(f"The {self.client} client requires PoToken to obtain functional streams, "
+                           f"See more details at https://github.com/JuanBindez/pytubefix/pull/209")
+
         for reason in messages:
             if status == 'UNPLAYABLE':
                 if reason == (
@@ -366,7 +371,7 @@ class YouTube:
                     raise exceptions.UnknownVideoError(video_id=self.video_id, status=status, reason=reason, developer_message=f'Unknown reason type for Error status')
             elif status == 'LIVE_STREAM':
                 raise exceptions.LiveStreamError(video_id=self.video_id)
-            elif status == None:
+            elif status is None:
                 pass
             else:
                 raise exceptions.UnknownVideoError(video_id=self.video_id, status=status, reason=reason, developer_message=f'Unknown video status')
@@ -420,13 +425,41 @@ class YouTube:
     def vid_info(self, value):
         self._vid_info = value
 
+    @property
+    def vid_details(self):
+        """Parse the raw vid details and return the parsed result.
+
+        The official player sends a request to the `next` endpoint to obtain some details of the video.
+
+        :rtype: Dict[Any, Any]
+        """
+        if self._vid_details:
+            return self._vid_details
+
+        innertube = InnerTube(
+            client='WEB',
+            use_oauth=self.use_oauth,
+            allow_cache=self.allow_oauth_cache,
+            token_file=self.token_file,
+            oauth_verifier=self.oauth_verifier,
+            use_po_token=self.use_po_token,
+            po_token_verifier=self.po_token_verifier
+        )
+        innertube_response = innertube.next(self.video_id)
+        self._vid_details = innertube_response
+        return self._vid_details
+
+    @vid_details.setter
+    def vid_details(self, value):
+        self._vid_details = value
+
     def age_check(self):
         """If the video has any age restrictions, you must confirm that you wish to continue.
 
-        Here the WEB client is used to have better stability.
+        Originally the WEB client was used, but with the implementation of PoToken we switched to MWEB.
         """
 
-        self.client = 'WEB'
+        self.client = 'MWEB'
         innertube = InnerTube(
             client=self.client,
             use_oauth=self.use_oauth,
@@ -749,6 +782,31 @@ class YouTube:
         :rtype: str
         """
         return f'https://www.youtube.com/channel/{self.channel_id}'
+
+    @property
+    def likes(self):
+        """Get the video likes
+
+        :rtype: str
+        """
+        try:
+            return self.vid_details[
+                'contents'][
+                'twoColumnWatchNextResults'][
+                'results'][
+                'results'][
+                'contents'][
+                0][
+                'videoPrimaryInfoRenderer'][
+                'videoActions'][
+                'menuRenderer'][
+                'topLevelButtons'][
+                0][
+                'segmentedLikeDislikeButtonViewModel'][
+                'likeCountEntity'][
+                'likeCountIfLikedNumber']
+        except (KeyError, IndexError):
+            return None
 
     @property
     def metadata(self) -> Optional[YouTubeMetadata]:
